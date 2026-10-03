@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/home/chad/.local/bin/nuclear-video-service.py
+ExecStart=%h/.local/bin/nuclear-video-service.py
 Restart=always
 RestartSec=3
 
