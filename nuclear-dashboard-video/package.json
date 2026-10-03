@@ -1,0 +1,39 @@
+{
+  "name": "nuclear-dashboard-video",
+  "version": "1.0.0",
+  "description": "Zero-control auto-resizing YouTube video companion for Nuclear Music Player's dashboard with GPU-accelerated H.264 streaming and instant track transitions",
+  "author": "Chad Longanecker",
+  "license": "MIT",
+  "main": "index.js",
+  "category": "dashboard",
+  "categories": [
+    "dashboard",
+    "integration"
+  ],
+  "keywords": [
+    "nuclear",
+    "nuclear-player",
+    "plugin",
+    "youtube",
+    "music-video",
+    "dashboard",
+    "companion"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/HuggingBunny/nuclear-dashboard-video.git"
+  },
+  "nuclear": {
+    "displayName": "Dashboard Video",
+    "author": "Chad Longanecker",
+    "category": "dashboard",
+    "categories": [
+      "dashboard",
+      "integration"
+    ],
+    "permissions": []
+  },
+  "scripts": {
+    "package": "zip -r plugin.zip package.json index.js README.md LICENSE service/"
+  }
+}
