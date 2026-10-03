@@ -21,6 +21,9 @@ let currentPlaybackState = null;
 let activeFetchController = null;
 let lastKnownSeek = 0;
 let fsHideTimer = null;
+let isDaemonAvailable = null;
+const RESOLVER_CACHE = new Map();
+const CACHE_TTL_MS = 2 * 60 * 60 * 1000;
 
 function extractVideoId(item) {
   if (!item || !item.track) return null;
@@ -101,8 +104,14 @@ function ensureVideoDom(wrapper) {
       autoplay
       muted
       playsinline
-      style="width: 100%; height: 100%; object-fit: contain; pointer-events: none; background: #000000;"
+      style="width: 100%; height: 100%; object-fit: contain; pointer-events: none; background: #000000; position: absolute; inset: 0;"
     ></video>
+    <iframe
+      id="nuclear-dashboard-iframe"
+      style="width: 100%; height: 100%; border: none; pointer-events: none; background: #000000; position: absolute; inset: 0; display: none;"
+      allow="autoplay; encrypted-media; picture-in-picture"
+      playsinline="1"
+    ></iframe>
     <button
       id="nuclear-fullscreen-btn"
       type="button"
@@ -141,6 +150,118 @@ function ensureVideoDom(wrapper) {
   updateFullscreenButtonState();
 }
 
+async function fetchWithTimeout(url, options = {}, timeoutMs = 2500) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  if (options.signal) {
+    options.signal.addEventListener('abort', () => {
+      clearTimeout(id);
+      controller.abort();
+    });
+  }
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(id);
+    return res;
+  } catch (err) {
+    clearTimeout(id);
+    throw err;
+  }
+}
+
+async function resolveDirectStream(videoId, signal) {
+  const cached = RESOLVER_CACHE.get(videoId);
+  if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
+    return cached.url;
+  }
+
+  // Tier 1: Try local daemon (fast path for Linux/power users)
+  if (isDaemonAvailable !== false) {
+    try {
+      const res = await fetchWithTimeout(`http://127.0.0.1:9199/url?v=${videoId}`, { signal }, 500);
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.url) {
+          isDaemonAvailable = true;
+          RESOLVER_CACHE.set(videoId, { url: data.url, timestamp: Date.now() });
+          return data.url;
+        }
+      }
+    } catch (_) {
+      isDaemonAvailable = false;
+    }
+  }
+
+  // Tier 2: Try public open-source stream extractors (Piped / Invidious)
+  const publicEndpoints = [
+    {
+      url: `https://api.piped.private.coffee/streams/${videoId}`,
+      extract: (data) => {
+        if (!data?.videoStreams?.length) return null;
+        const mp4s = data.videoStreams.filter(s => s.mimeType?.includes('mp4') || s.format === 'MPEG_4');
+        const c = mp4s.find(s => s.quality === '720p') || mp4s[0] || data.videoStreams[0];
+        return c?.url || null;
+      }
+    },
+    {
+      url: `https://invidious.f5.si/api/v1/videos/${videoId}`,
+      extract: (data) => {
+        if (data?.formatStreams?.length) {
+          const mp4 = data.formatStreams.find(s => s.container === 'mp4' || s.encoding === 'H.264') || data.formatStreams[0];
+          if (mp4?.url) return mp4.url;
+        }
+        if (data?.adaptiveFormats?.length) {
+          const v = data.adaptiveFormats.find(s => s.type?.includes('video/mp4') || s.container === 'mp4');
+          if (v?.url) return v.url;
+        }
+        return null;
+      }
+    }
+  ];
+
+  for (const ep of publicEndpoints) {
+    if (signal?.aborted) break;
+    try {
+      const res = await fetchWithTimeout(ep.url, { signal, headers: { 'Accept': 'application/json' } }, 3000);
+      if (res.ok) {
+        const data = await res.json();
+        const streamUrl = ep.extract(data);
+        if (streamUrl) {
+          RESOLVER_CACHE.set(videoId, { url: streamUrl, timestamp: Date.now() });
+          return streamUrl;
+        }
+      }
+    } catch (_) {
+      continue;
+    }
+  }
+
+  return null;
+}
+
+function switchToIframe(wrapper, videoId) {
+  if (loadingEl) loadingEl.style.display = 'none';
+  if (videoEl) {
+    try { videoEl.pause(); } catch (_) {}
+    videoEl.style.display = 'none';
+  }
+  let iframe = wrapper.querySelector('#nuclear-dashboard-iframe');
+  if (!iframe) {
+    iframe = document.createElement('iframe');
+    iframe.id = 'nuclear-dashboard-iframe';
+    iframe.setAttribute('frameborder', '0');
+    iframe.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture');
+    iframe.setAttribute('playsinline', '1');
+    iframe.style.cssText = 'position: absolute; inset: 0; width: 100%; height: 100%; border: none; pointer-events: none; background: #000000;';
+    wrapper.appendChild(iframe);
+  }
+  const embedSrc = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&mute=1&controls=0&disablekb=1&fs=0&loop=1&playlist=${videoId}&playsinline=1&modestbranding=1&rel=0`;
+  if (iframe.src !== embedSrc) {
+    iframe.src = embedSrc;
+  }
+  iframe.style.display = 'block';
+}
+
 async function loadVideoStream(videoId) {
   if (!containerEl) return;
 
@@ -163,7 +284,7 @@ async function loadVideoStream(videoId) {
     return;
   }
 
-  if (currentVideoId === videoId && videoEl?.src) {
+  if (currentVideoId === videoId && (videoEl?.src || wrapper.querySelector('#nuclear-dashboard-iframe')?.src)) {
     return;
   }
 
@@ -181,20 +302,21 @@ async function loadVideoStream(videoId) {
   activeFetchController = new AbortController();
 
   try {
-    const res = await fetch(`http://127.0.0.1:9199/url?v=${videoId}`, {
-      signal: activeFetchController.signal
-    });
-    if (!res.ok) throw new Error(`Resolver returned status ${res.status}`);
-    const data = await res.json();
+    const streamUrl = await resolveDirectStream(videoId, activeFetchController.signal);
+    const iframeEl = wrapper.querySelector('#nuclear-dashboard-iframe');
 
-    if (data.url && videoEl) {
-      videoEl.src = data.url;
+    if (streamUrl && videoEl) {
+      if (iframeEl) {
+        iframeEl.style.display = 'none';
+        iframeEl.src = 'about:blank';
+      }
+      videoEl.style.display = 'block';
+      videoEl.src = streamUrl;
       videoEl.muted = true;
 
       videoEl.onloadedmetadata = () => {
         if (loadingEl) loadingEl.style.display = 'none';
 
-        // Only seek if playback is already mid-track (> 4.0s). Never seek at track start to avoid extra buffer stalls.
         if (currentPlaybackState && typeof currentPlaybackState.seek === 'number' && currentPlaybackState.seek >= 4.0) {
           videoEl.currentTime = currentPlaybackState.seek;
           lastKnownSeek = currentPlaybackState.seek;
@@ -208,41 +330,42 @@ async function loadVideoStream(videoId) {
       };
 
       videoEl.onerror = () => {
-        if (loadingEl) {
-          loadingEl.textContent = 'Failed to load video stream';
-        }
+        switchToIframe(wrapper, videoId);
       };
+    } else {
+      switchToIframe(wrapper, videoId);
     }
   } catch (err) {
-    if (err.name !== 'AbortError' && loadingEl) {
-      loadingEl.textContent = 'Video resolver error';
+    if (err.name !== 'AbortError') {
+      switchToIframe(wrapper, videoId);
     }
   }
 }
 
 function syncPlaybackWithVideo(state) {
-  if (!state || !videoEl) return;
+  if (!state) return;
   currentPlaybackState = state;
 
-  videoEl.muted = true;
+  if (videoEl && videoEl.style.display !== 'none') {
+    videoEl.muted = true;
 
-  if (state.status === 'playing') {
-    if (videoEl.paused && videoEl.readyState >= 2) {
-      videoEl.play().catch(() => {});
+    if (state.status === 'playing') {
+      if (videoEl.paused && videoEl.readyState >= 2) {
+        videoEl.play().catch(() => {});
+      }
+    } else if (state.status === 'paused' || state.status === 'stopped') {
+      if (!videoEl.paused) {
+        videoEl.pause();
+      }
     }
-  } else if (state.status === 'paused' || state.status === 'stopped') {
-    if (!videoEl.paused) {
-      videoEl.pause();
-    }
-  }
 
-  // Only intervene and re-seek if the user scrubbed (> 6.0s jump)
-  if (typeof state.seek === 'number' && Number.isFinite(state.seek)) {
-    const userScrubbed = Math.abs(state.seek - lastKnownSeek) > 6.0;
-    lastKnownSeek = state.seek;
+    if (typeof state.seek === 'number' && Number.isFinite(state.seek)) {
+      const userScrubbed = Math.abs(state.seek - lastKnownSeek) > 6.0;
+      lastKnownSeek = state.seek;
 
-    if (userScrubbed) {
-      videoEl.currentTime = Math.max(0, state.seek);
+      if (userScrubbed) {
+        videoEl.currentTime = Math.max(0, state.seek);
+      }
     }
   }
 }
@@ -377,7 +500,8 @@ function injectStyles() {
       pointer-events: none;
       background: #000000;
     }
-    #nuclear-dashboard-video-container:fullscreen #nuclear-dashboard-video {
+    #nuclear-dashboard-video-container:fullscreen #nuclear-dashboard-video,
+    #nuclear-dashboard-video-container:fullscreen #nuclear-dashboard-iframe {
       width: 100% !important;
       height: 100% !important;
       object-fit: contain !important;

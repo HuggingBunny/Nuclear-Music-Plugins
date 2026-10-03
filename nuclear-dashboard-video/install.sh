@@ -27,9 +27,13 @@ cp "${SCRIPT_DIR}/service/nuclear-video-service.py" "${BIN_DIR}/nuclear-video-se
 chmod +x "${BIN_DIR}/nuclear-video-service.py"
 cp "${SCRIPT_DIR}/service/nuclear-video.service" "${SYSTEMD_USER_DIR}/nuclear-video.service"
 
-echo "==> Enabling systemd user service..."
-systemctl --user daemon-reload
-systemctl --user enable --now nuclear-video.service
+if command -v systemctl >/dev/null 2>&1; then
+  echo "==> Enabling optional systemd companion service..."
+  systemctl --user daemon-reload || true
+  systemctl --user enable --now nuclear-video.service 2>/dev/null || echo "==> Note: systemd service not started. Plugin will use universal stream resolver."
+else
+  echo "==> Note: systemd not found. Plugin will run in universal cross-platform mode."
+fi
 
 # 4. Register in plugins.json if not present
 if [ -f "${PLUGINS_JSON}" ]; then
