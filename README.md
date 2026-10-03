@@ -9,6 +9,7 @@ A curated suite of high-performance, open-source plugins for the [Nuclear Music 
 | Plugin | Version | Category | Description | Source Directory |
 | :--- | :---: | :---: | :--- | :--- |
 | **Playlist Manual Sort** | `1.0.0` | `ui` / `playlists` | Adds a new "Manual" sort option with 60fps GPU-accelerated click-and-drag reordering and durable storage. | [`nuclear-playlist-manual-sort/`](./nuclear-playlist-manual-sort/) |
+| **Playlist Tags & Filter** | `1.0.0` | `ui` / `playlists` | Tag categorization, quick-tag popovers on cards, and instant tag filtering on the playlists view. | [`nuclear-playlist-tags/`](./nuclear-playlist-tags/) |
 | **Dashboard Video Companion** | `1.0.0` | `dashboard` | Embeds a zero-control auto-resizing YouTube video player directly on the Nuclear dashboard for the playing track. | [`nuclear-dashboard-video/`](./nuclear-dashboard-video/) |
 
 ---
@@ -35,7 +36,26 @@ chmod +x install.sh
 
 ---
 
-## 2. Dashboard Video Companion (`nuclear-dashboard-video`)
+## 2. Playlist Tags & Filtering (`nuclear-playlist-tags`)
+
+Enables rich playlist categorization with top-level filter chips, inline tag creation, and card-level quick-tagging.
+
+### Features
+- **Top Filter Chip Bar**: Placed directly above the playlist grid on `/playlists` with live playlist count badges (`All`, `LoFi`, `Punk`, `Rock`, etc.).
+- **Card Quick-Tagging**: Displays mini tag badges on playlist cards with a dedicated `🏷️` popover editor to toggle tags on the fly without navigating away.
+- **Playlist Detail Integration**: Tag badges and `+ Add Tag` editor injected into `/playlist/<id>` header.
+- **Zero Schema Pollution**: Persists strictly to `api.Settings` and `localStorage`, never corrupting Nuclear's native playlist JSON files.
+
+### Quick Install
+```bash
+cd Nuclear-Music-Plugins/nuclear-playlist-tags
+chmod +x install.sh
+./install.sh
+```
+
+---
+
+## 3. Dashboard Video Companion (`nuclear-dashboard-video`)
 
 Embeds synchronized music videos on the Nuclear main dashboard whenever a track is playing.
 
