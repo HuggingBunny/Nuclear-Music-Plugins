@@ -40,6 +40,8 @@ chmod +x install.sh
 
 Enables rich playlist categorization with top-level filter chips, inline tag creation, and card-level quick-tagging.
 
+![Playlist Tags and Filtering in Nuclear Music Player](./docs/tags-screenshot.png)
+
 ### Features
 - **Top Filter Chip Bar**: Placed directly above the playlist grid on `/playlists` with live playlist count badges (`All`, `LoFi`, `Punk`, `Rock`, etc.).
 - **Card Quick-Tagging**: Displays mini tag badges on playlist cards with a dedicated `🏷️` popover editor to toggle tags on the fly without navigating away.
