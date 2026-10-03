@@ -17,6 +17,8 @@ A curated suite of high-performance, open-source plugins for the [Nuclear Music 
 
 Provides manual, intuitive playlist reorganization directly in Nuclear's Playlists view (`/playlists`).
 
+![Playlist Manual Sort in Nuclear Music Player](./docs/screenshot.png)
+
 ### Features
 - **Manual Sort Option**: Seamlessly integrates into Nuclear's Headless UI sort dropdown alongside native sort options.
 - **60fps Drag Engine**: Pointer Events drag controller using `requestAnimationFrame`, zero-reflow bounding calculations, and GPU-accelerated `translate3d` ghost rendering.
